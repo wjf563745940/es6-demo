@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<script type="text/javascript" src="./vue.js"></script>
+</head>
+<body>
+<div id="app">
+
+</div> 
+</body>
+<script>
+//基本实现 任务队列（settimeout），生命周期，resolve的状态，reject的状态，then方法，串联 catch捕获，
+//未实现  all方法，race方法  promise全局处理
+var uid=0
+var qui=0;
+function Que(){
+  this.qid=qui++;
+  this.pros=[];
+}
+Que.prototype.notify=function(){
+    const pros = this.pros.slice();//保证pros是个数组
+      for (let i = 0, l = pros.length; i < l; i++) {
+         pros[i].run();
+      }
+}
+Que.prototype.addPromis=function(pro){
+    this.pros.push(pro)
+}
+
+function defineReactive(obj,  key,val){
+  var que=new Que();
+  Object.defineProperty(obj, key, {
+    enumerable: true,
+    configurable: true,
+    get: function reactiveGetter () {
+      if(Que.target){
+        que.addPromis(Que.target);
+      }
+      return val
+    },
+    set: function reactiveSetter (newVal) {
+      var value =  val;
+          if (newVal === value) {
+            return
+          }else{
+            que.notify();
+          }
+    }
+  })
+}
+function MyPromise(opt) {
+  this.uid=++uid;
+  this.status="pending";
+  this.que=[];
+  this.count=0;
+  this.newval="";
+   this.originval="";
+  this.origin=true;//没用
+  this.nextPromise=[];
+  this.isNeedCatch=false;
+  Que.target=this;
+  defineReactive(this,"count",0);
+ this.count;
+  Que.target=null;
+
+  if(typeof opt =='function'){
+    opt(this.resolve.bind(this),this.reject.bind(this))
+  } 
+   if( opt instanceof MyPromise){
+    this.status="fulfilled";
+    if(opt.status=="pending"){
+      this.status="pending";
+    }
+    if(opt.isNeedCatch){
+      this.newval=  this.originval=opt.originval
+    }     
+   
+  }   
+}
+MyPromise.prototype.resolve=function resolve(val){
+   this.status="fulfilled";
+  this.originval=  this.newval=val;
+    if(this.que.length>0){
+      this.run();
+    }
+  }
+  MyPromise.prototype.reject=function reject(val){
+     this.status="rejected";
+     this.isNeedCatch=true;
+      this.originval=this.newval=val;
+      this.run();
+
+  }
+  // MyPromise.prototype.changestatus=function(){ 
+  //    this.status="fulfilled";
+  // }
+   MyPromise.prototype.run=function run(){
+    if( this.status!="pending"){
+      setTimeout(()=>{
+      if(this.que!=null && this.que.length>0){
+        for(let i=0;i<this.que.length;i++){
+          var fnnobj=this.que[i]
+        
+       // this.que.every(fnnobj=>{
+        if(fnnobj!=null){
+              if(this.isNeedCatch){
+                    var fnn=fnnobj.rejectFn;
+                    if(fnn==null){
+                       this.nextPromise[i].isNeedCatch=true;
+                       this.nextPromise[i].status="fulfilled";
+                       this.nextPromise[i].newval=  this.originval;
+                      this.nextPromise[i].run()
+                      continue;
+                    }
+                    this.isNeedCatch=false;
+              }else{
+                if(this.status=="fulfilled"){
+                var fnn=fnnobj.resolveFn;
+                if(fnn==null){
+                   continue;
+                }
+                }else {
+                      var fnn=fnnobj.resolveFn;
+                }
+              }
+              
+               this.newval=fnn(this.newval);
+                this.nextPromise[i].status="fulfilled";
+               if( this.newval instanceof MyPromise ){
+                     if(this.newval.isNeedCatch){ this.nextPromise[i].isNeedCatch=true;}                  
+                      this.nextPromise[i].newval=this.newval.originval;
+                         this.nextPromise[i].run();
+                          this.newval=this.originval;
+               }else{
+                   if(this.nextPromise!=null && this.nextPromise.length>0){
+                        var n= this.nextPromise[i];
+                        n.newval=this.newval;
+                        this.newval=this.originval;
+                        if(this.isNeedCatch){n.isNeedCatch=true;}
+                        n.run();
+                      }  
+               }
+               
+               this.newval=this.originval
+        }
+        //});
+}
+        this.que=[];
+       
+      }
+    },0)
+    }
+}
+MyPromise.prototype.then=function(fn,fn2){
+ this.que.push({
+  resolveFn:   ((fn && fn!=null) ?fn:null),
+  rejectFn:    ((fn2 && fn2!=null) ?fn2:null),
+ });
+  var n=new MyPromise(this);
+  this.nextPromise.push(n);
+ //if(this.origin){
+   this.count=this.count+1;
+ //}
+
+  return  n
+ }
+MyPromise.prototype.catch=function(fn2){
+   this.que.push({
+  resolveFn:   null,
+  rejectFn:    ((fn2 && fn2!=null) ?fn2:null),
+ });
+   var n=new MyPromise(this)
+  this.nextPromise.push(n);
+ //if(this.origin){
+   this.count=this.count+1;
+ //}
+
+  return  n
+}
+//以下测试用例
+
+
+// var m=new MyPromise(function(resolve,reject){
+//   setTimeout(function(){
+//     reject(1);
+//   })  
+// })
+// console.log("start")
+// m.then(function(v){
+//     console.log("catch=",v)
+//     return -100
+// }).then(function(v){
+//   console.log(v);
+//   return v+100;
+// },function(v){
+// console.log(v);}).then(function(v){
+//   console.log("then2=",v);
+// }).then(function(v){
+//   console.log("then3=",v)
+// }).catch(function(){console.log("catch 2")})
+// console.log("end");
+
+
+
+// var m1=new MyPromise(function(resolve,reject){
+//   console.log("m1",1);
+//     reject("m1",1);
+// })
+// var m2=m1.catch(function(v){
+
+//   console.log(v);
+//   return "then"+v
+// }).then(function(v){
+//   console.log(v)
+// })
+//  m11 m1 thenm1 undefined    m11   undefined  m1  thenm1
+
+
+// var p1=new MyPromise(function(resolve,reject){///未实行then / catch返回的一个新的promise后返回的应该是一个新的promise  return没有value就是undfine
+
+//     reject(41);
+// })
+// var p2=new MyPromise(function(resolve,reject){
+
+//     resolve(42);
+// })
+// p1.then(v=>{
+//   console.log(v);
+//   return p2
+// }).catch(v=>{
+//   console.log(v);
+//   return p2
+// }).then(v=>{
+//   console.log("then 3",v)
+// })
+//41 then 3 42
+
+// var p=new MyPromise((r1,r2)=>{r1(1)});
+// p1=p.then(v=>{return v+1});
+// p2=p.then(v=>console.log(v));
+// p1.then(v=>console.log(v));
+// p2.then(v=>console.log(v));
+// 1 2 undefied
+
+
+// var p2=new MyPromise((r1,r2)=>{r1("p2")});
+// p3=p2.then(v=>{return p2});
+// p3.then(v=>console.log(v));
+//p2
+
+var p2=new MyPromise((r1,r2)=>{r1(1)})
+p3=p2.then(v=>{return p2});
+p3.then(v=>console.log("111p3",v));
+//111p3 1
+</script>
+</html>
+
